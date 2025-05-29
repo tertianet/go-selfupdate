@@ -1,6 +1,7 @@
 # Use glob syntax.
 syntax: glob
 
+.idea
 *.DS_Store
 *.swp
 *.swo

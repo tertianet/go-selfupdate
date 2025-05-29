@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/kr/binarydist"
 )
 
@@ -56,6 +57,10 @@ type Updater struct {
 	BinURL         string    // Base URL for full binary downloads.
 	DiffURL        string    // Base URL for diff downloads.
 	Dir            string    // Directory to store selfupdate state.
+	ArchiveMode    bool      // Download new version from archive or raw bin(true/false). Bin file inside expected as u.plat() declare
+	ExtraFiles     []string  // Files from archive
+	ArchiveFormat  string    // zip or tar.gz or "" which is autodetect
+	Verbose        bool      // logging every step
 	ForceCheck     bool      // Check for update regardless of cktime timestamp
 	CheckTime      int       // Time in hours before next check
 	RandomizeTime  int       // Time in hours to randomize with CheckTime
@@ -193,8 +198,17 @@ func (u *Updater) Update() error {
 		return err
 	}
 
-	// we are on the latest version, nothing to do
-	if u.Info.Version == u.CurrentVersion {
+	remoteVersion, err := semver.NewVersion(u.Info.Version)
+	if err != nil {
+		return fmt.Errorf("failed to parse remote version %q: %w", u.Info.Version, err)
+	}
+
+	currentVersion, err := semver.NewVersion(u.CurrentVersion)
+	if err != nil {
+		return fmt.Errorf("failed to parse current version %q: %w", u.CurrentVersion, err)
+	}
+
+	if remoteVersion.LessThanEqual(currentVersion) {
 		return nil
 	}
 
@@ -204,9 +218,28 @@ func (u *Updater) Update() error {
 	}
 	defer old.Close()
 
+	if u.ArchiveMode {
+		err = u.updateFromArchive(path)
+	} else {
+		err = u.updateBinary(old, path)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	// update was successful, run func if set
+	if u.OnSuccessfulUpdate != nil {
+		u.OnSuccessfulUpdate()
+	}
+
+	return nil
+}
+
+func (u *Updater) updateBinary(old *os.File, path string) error {
 	bin, err := u.fetchAndVerifyPatch(old)
 	if err != nil {
-		if err == ErrHashMismatch {
+		if errors.Is(err, ErrHashMismatch) {
 			log.Println("update: hash mismatch from patched binary")
 		} else {
 			if u.DiffURL != "" {
@@ -217,7 +250,7 @@ func (u *Updater) Update() error {
 		// if patch failed grab the full new bin
 		bin, err = u.fetchAndVerifyFullBin()
 		if err != nil {
-			if err == ErrHashMismatch {
+			if errors.Is(err, ErrHashMismatch) {
 				log.Println("update: hash mismatch from full binary")
 			} else {
 				log.Println("update: fetching full binary,", err)
@@ -234,16 +267,7 @@ func (u *Updater) Update() error {
 	if errRecover != nil {
 		return fmt.Errorf("update and recovery errors: %q %q", err, errRecover)
 	}
-	if err != nil {
-		return err
-	}
-
-	// update was successful, run func if set
-	if u.OnSuccessfulUpdate != nil {
-		u.OnSuccessfulUpdate()
-	}
-
-	return nil
+	return err
 }
 
 func fromStream(updateWith io.Reader) (err error, errRecover error) {
@@ -262,7 +286,7 @@ func fromStream(updateWith io.Reader) (err error, errRecover error) {
 	updateDir := filepath.Dir(updatePath)
 	filename := filepath.Base(updatePath)
 
-	// Copy the contents of of newbinary to a the new executable file
+	// Copy the contents  of new binary to the new executable file
 	newPath := filepath.Join(updateDir, fmt.Sprintf(".%s.new", filename))
 	fp, err := os.OpenFile(newPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
 	if err != nil {
