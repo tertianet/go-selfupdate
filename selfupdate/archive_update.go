@@ -352,3 +352,34 @@ func (u *Updater) archiveName() string {
 func (u *Updater) unpackedArchiveName() string {
 	return u.plat()
 }
+
+func GetSharedLibConfig() (sharedLibName, archiveFormat string, err error) {
+	goos := runtime.GOOS
+	goarch := runtime.GOARCH
+
+	switch goos {
+	case "windows":
+		sharedLibName = "gridnetlibamd64.dll"
+		archiveFormat = "zip"
+	case "darwin":
+		switch goarch {
+		case "arm64":
+			sharedLibName = "darwingridnetlibarm64.dylib"
+			archiveFormat = "tar.gz"
+		case "amd64":
+			sharedLibName = "darwingridnetlibamd64.dylib"
+			archiveFormat = "tar.gz"
+		default:
+			err = fmt.Errorf("unsupported architecture %s for Darwin", goarch)
+		}
+
+	case "linux":
+		sharedLibName = "libgridnetlib.so"
+		archiveFormat = "tar.gz"
+
+	default:
+		err = fmt.Errorf("unsupported operating system: %s", goos)
+	}
+
+	return
+}
