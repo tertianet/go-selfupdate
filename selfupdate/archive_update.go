@@ -231,12 +231,10 @@ func (u *Updater) replaceFiles(tempDir string, execPath string) error {
 		src := filepath.Join(tempDir, u.unpackedArchiveName(), extraFile)
 		dst := filepath.Join(currentDir, extraFile)
 
-		if _, err := os.Stat(dst); err == nil {
-			replacements = append(replacements, struct{ src, dst string }{
-				src: src,
-				dst: dst,
-			})
-		}
+		replacements = append(replacements, struct{ src, dst string }{
+			src: src,
+			dst: dst,
+		})
 	}
 
 	replacements = append(replacements, struct{ src, dst string }{
@@ -301,6 +299,12 @@ func (u *Updater) copyFile(src, dst string) error {
 func (u *Updater) replaceFile(src, dst string) error {
 	if runtime.GOOS == "windows" && strings.HasSuffix(dst, ".exe") {
 		oldPath := dst + ".old"
+
+		if _, err := os.Stat(dst); os.IsNotExist(err) {
+			return u.copyFile(src, dst)
+		} else if err != nil {
+			return err
+		}
 
 		if err := os.Rename(dst, oldPath); err != nil {
 			return err
