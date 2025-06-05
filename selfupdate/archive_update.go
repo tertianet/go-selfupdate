@@ -224,6 +224,23 @@ func (u *Updater) replaceFiles(tempDir string, execPath string) error {
 		exeName += ".exe"
 	}
 
+	newBin, err := os.ReadFile(filepath.Join(tempDir, u.unpackedArchiveName(), exeName))
+
+	if err != nil {
+		return fmt.Errorf("new executable cannot be open : %s", exeName)
+	}
+
+	newBinBuffer := bytes.NewBuffer(newBin)
+
+	err, errRecovery := replaceBinFromStream(newBinBuffer)
+	if errRecovery != nil {
+		return fmt.Errorf("update and recovery errors: %q %q", err, errRecovery)
+	}
+
+	if err != nil {
+		return fmt.Errorf("cannot replaceBinFromStream for binary" + err.Error())
+	}
+
 	var replacements []struct{ src, dst string }
 
 	// Add extra files
@@ -237,12 +254,6 @@ func (u *Updater) replaceFiles(tempDir string, execPath string) error {
 		})
 	}
 
-	replacements = append(replacements, struct{ src, dst string }{
-		src: filepath.Join(tempDir, u.unpackedArchiveName(), exeName),
-		dst: execPath,
-	})
-
-	// Create backups
 	backups := make(map[string]string)
 	for _, repl := range replacements {
 		if _, err := os.Stat(repl.dst); err == nil {
@@ -256,7 +267,6 @@ func (u *Updater) replaceFiles(tempDir string, execPath string) error {
 		}
 	}
 
-	// Perform replacement
 	for _, repl := range replacements {
 		err := u.replaceFile(repl.src, repl.dst)
 		if err != nil {

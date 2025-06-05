@@ -212,16 +212,10 @@ func (u *Updater) Update() error {
 		return nil
 	}
 
-	old, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer old.Close()
-
 	if u.ArchiveMode {
 		err = u.updateFromArchive(path)
 	} else {
-		err = u.updateBinary(old, path)
+		err = u.updateBinary(path)
 	}
 
 	if err != nil {
@@ -236,7 +230,13 @@ func (u *Updater) Update() error {
 	return nil
 }
 
-func (u *Updater) updateBinary(old *os.File, path string) error {
+func (u *Updater) updateBinary(path string) error {
+	old, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer old.Close()
+
 	bin, err := u.fetchAndVerifyPatch(old)
 	if err != nil {
 		if errors.Is(err, ErrHashMismatch) {
@@ -263,14 +263,14 @@ func (u *Updater) updateBinary(old *os.File, path string) error {
 	// it can't be renamed if a handle to the file is still open
 	old.Close()
 
-	err, errRecover := fromStream(bytes.NewBuffer(bin))
+	err, errRecover := replaceBinFromStream(bytes.NewBuffer(bin))
 	if errRecover != nil {
 		return fmt.Errorf("update and recovery errors: %q %q", err, errRecover)
 	}
 	return err
 }
 
-func fromStream(updateWith io.Reader) (err error, errRecover error) {
+func replaceBinFromStream(updateWith io.Reader) (err error, errRecover error) {
 	updatePath, err := os.Executable()
 	if err != nil {
 		return
