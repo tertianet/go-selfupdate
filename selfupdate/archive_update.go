@@ -15,7 +15,7 @@ import (
 	"strings"
 )
 
-func (u *Updater) updateFromArchive(execPath string) error {
+func (u *Updater) updateFromArchive(srcExec string) error {
 	archiveData, err := u.downloadArchive()
 	if err != nil {
 		return fmt.Errorf("failed to download archive: %w", err)
@@ -37,7 +37,7 @@ func (u *Updater) updateFromArchive(execPath string) error {
 		return fmt.Errorf("validation failed: %w", err)
 	}
 
-	err = u.replaceFiles(tempDir, execPath)
+	err = u.replaceFiles(tempDir, srcExec)
 	if err != nil {
 		return err
 	}
@@ -215,35 +215,24 @@ func (u *Updater) validateExtractedFiles(tempDir string) error {
 	return nil
 }
 
-func (u *Updater) replaceFiles(tempDir string, execPath string) error {
-	currentDir := filepath.Dir(execPath)
+func (u *Updater) replaceFiles(tempDir string, srcExec string) error {
+	currentDir := filepath.Dir(srcExec)
 
-	// Prepare replacement plan
 	exeName := u.plat()
 	if runtime.GOOS == "windows" {
 		exeName += ".exe"
 	}
 
-	newBin, err := os.ReadFile(filepath.Join(tempDir, u.unpackedArchiveName(), exeName))
-
+	//replace BIN
+	newBinPath := filepath.Join(tempDir, u.unpackedArchiveName(), exeName)
+	err := u.replaceFile(newBinPath, srcExec)
 	if err != nil {
-		return fmt.Errorf("new executable cannot be open : %s", exeName)
+		return fmt.Errorf("cannot replaceFileFromStream. Err: %s, File: %s", err.Error(), newBinPath)
 	}
-
-	newBinBuffer := bytes.NewBuffer(newBin)
-
-	err, errRecovery := replaceBinFromStream(newBinBuffer)
-	if errRecovery != nil {
-		return fmt.Errorf("update and recovery errors: %q %q", err, errRecovery)
-	}
-
-	if err != nil {
-		return fmt.Errorf("cannot replaceBinFromStream for binary" + err.Error())
-	}
-
-	var replacements []struct{ src, dst string }
 
 	// Add extra files
+	var replacements []struct{ src, dst string }
+
 	for _, extraFile := range u.ExtraFiles {
 		src := filepath.Join(tempDir, u.unpackedArchiveName(), extraFile)
 		dst := filepath.Join(currentDir, extraFile)
@@ -307,29 +296,19 @@ func (u *Updater) copyFile(src, dst string) error {
 }
 
 func (u *Updater) replaceFile(src, dst string) error {
-	if runtime.GOOS == "windows" && strings.HasSuffix(dst, ".exe") {
-		oldPath := dst + ".old"
-
-		if _, err := os.Stat(dst); os.IsNotExist(err) {
-			return u.copyFile(src, dst)
-		} else if err != nil {
-			return err
-		}
-
-		if err := os.Rename(dst, oldPath); err != nil {
-			return err
-		}
-
-		if err := u.copyFile(src, dst); err != nil {
-			os.Rename(oldPath, dst)
-			return err
-		}
-
-		os.Remove(oldPath)
-		return nil
+	newBuf, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("cannot read file before replace : %s", src)
 	}
 
-	return u.copyFile(src, dst)
+	newFileBuffer := bytes.NewBuffer(newBuf)
+
+	err, errRecovery := replaceFileFromStream(newFileBuffer, dst)
+	if errRecovery != nil {
+		return fmt.Errorf("update and recovery errors: %q %q", err, errRecovery)
+	}
+
+	return err
 }
 
 func (u *Updater) restoreBackups(backups map[string]string) {
