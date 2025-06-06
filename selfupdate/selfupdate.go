@@ -263,19 +263,14 @@ func (u *Updater) updateBinary(path string) error {
 	// it can't be renamed if a handle to the file is still open
 	old.Close()
 
-	err, errRecover := replaceBinFromStream(bytes.NewBuffer(bin))
+	err, errRecover := replaceFileFromStream(bytes.NewBuffer(bin), path)
 	if errRecover != nil {
 		return fmt.Errorf("update and recovery errors: %q %q", err, errRecover)
 	}
 	return err
 }
 
-func replaceBinFromStream(updateWith io.Reader) (err error, errRecover error) {
-	updatePath, err := os.Executable()
-	if err != nil {
-		return
-	}
-
+func replaceFileFromStream(updateWith io.Reader, filePath string) (err error, errRecover error) {
 	var newBytes []byte
 	newBytes, err = ioutil.ReadAll(updateWith)
 	if err != nil {
@@ -283,8 +278,8 @@ func replaceBinFromStream(updateWith io.Reader) (err error, errRecover error) {
 	}
 
 	// get the directory the executable exists in
-	updateDir := filepath.Dir(updatePath)
-	filename := filepath.Base(updatePath)
+	updateDir := filepath.Dir(filePath)
+	filename := filepath.Base(filePath)
 
 	// Copy the contents  of new binary to the new executable file
 	newPath := filepath.Join(updateDir, fmt.Sprintf(".%s.new", filename))
@@ -308,17 +303,17 @@ func replaceBinFromStream(updateWith io.Reader) (err error, errRecover error) {
 	_ = os.Remove(oldPath)
 
 	// move the existing executable to a new file in the same directory
-	err = os.Rename(updatePath, oldPath)
+	err = os.Rename(filePath, oldPath)
 	if err != nil {
 		return
 	}
 
 	// move the new exectuable in to become the new program
-	err = os.Rename(newPath, updatePath)
+	err = os.Rename(newPath, filePath)
 
 	if err != nil {
 		// copy unsuccessful
-		errRecover = os.Rename(oldPath, updatePath)
+		errRecover = os.Rename(oldPath, filePath)
 	} else {
 		// copy successful, remove the old binary
 		errRemove := os.Remove(oldPath)
